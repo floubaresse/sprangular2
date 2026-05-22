@@ -126,10 +126,19 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python3 .github/scripts/analyze_failures.py
 
+      - name: Download sonar log
+        if: needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.sonarqube.result == 'success' && github.ref != 'refs/heads/main'
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar.log
+          path: sonar-results
+        continue-on-error: true
+
       - name: Create pull request
         if: needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.sonarqube.result == 'success' && github.ref != 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           BRANCH: ${{ github.ref_name }}
+          SONAR_LOG_PATH: sonar-results/sonar.log
         run: python3 .github/scripts/create_pr.py
