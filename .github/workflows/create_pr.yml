@@ -26,12 +26,6 @@ jobs:
         working-directory: spring-boot-server
         run: ./mvnw clean verify 2>&1 | tee ../backend.log; exit ${PIPESTATUS[0]}
 
-     
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v4
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   
-
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -71,8 +65,37 @@ jobs:
             frontend-build.log
             frontend-test.log
 
+  sonarqube:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        with:
+          args: >
+            -Dsonar.log.level=INFO
+            -Dsonar.log.console=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Persist Sonar log
+        run: |
+          if [ -f .scannerwork/sonar-scanner.log ]; then cp .scannerwork/sonar-scanner.log sonarqube.log; fi
+          if [ -f logs/sonar-scanner.log ]; then cp logs/sonar-scanner.log sonarqube.log; fi
+          if [ -f sonar-scanner.log ]; then cp sonar-scanner.log sonarqube.log; fi
+          if [ ! -f sonarqube.log ]; then echo "No Sonar scanner log found." > sonarqube.log; fi
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarqube-logs
+          path: sonarqube.log
+
+
   post-ci:
-    needs: [backend, frontend]
+    needs: [backend, frontend, sonarqube]
     if: always()
     runs-on: ubuntu-latest
     steps:
