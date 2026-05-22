@@ -1,0 +1,96 @@
+name: Create PR
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and test
+        working-directory: spring-boot-server
+        run: ./mvnw clean verify 2>&1 | tee ../backend.log; exit ${PIPESTATUS[0]}
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs
+          path: backend.log
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: angular-17-client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: angular-17-client
+        run: npm ci
+
+      - name: Build
+        working-directory: angular-17-client
+        run: npm run build 2>&1 | tee ../frontend-build.log; exit ${PIPESTATUS[0]}
+
+      - name: Test
+        working-directory: angular-17-client
+        run: npx ng test --watch=false --browsers=ChromeHeadless 2>&1 | tee ../frontend-test.log; exit ${PIPESTATUS[0]}
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-logs
+          path: |
+            frontend-build.log
+            frontend-test.log
+
+  post-ci:
+    needs: [backend, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download failure logs
+        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          path: failure-logs
+        continue-on-error: true
+
+      - name: AI failure analysis
+        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 .github/scripts/analyze_failures.py
+
+      - name: Create pull request
+        if: needs.backend.result == 'success' && needs.frontend.result == 'success' && github.ref != 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BRANCH: ${{ github.ref_name }}
+        run: python3 .github/scripts/create_pr.py
