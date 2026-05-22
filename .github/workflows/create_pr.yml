@@ -26,6 +26,12 @@ jobs:
         working-directory: spring-boot-server
         run: ./mvnw clean verify 2>&1 | tee ../backend.log; exit ${PIPESTATUS[0]}
 
+     
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   
+
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4
