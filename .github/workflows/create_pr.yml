@@ -72,18 +72,24 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
-        with:
-          args: >
-            | tee sonar_logs.txt
+        run: |
+          docker run --rm \
+            -e SONAR_TOKEN \
+            -e SONAR_HOST_URL \
+            -v "$GITHUB_WORKSPACE:/usr/src" \
+            sonarsource/sonar-scanner-cli:latest \
+            -X 2>&1 | tee sonar.log
+          exit ${PIPESTATUS[0]}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
 
       - name: Upload logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sonar_logs.txt
-          path: sonar_logs.txt
+          name: sonar.log
+          path: sonar.log
 
 
   post-ci:
