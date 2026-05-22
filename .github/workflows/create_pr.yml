@@ -90,7 +90,7 @@ jobs:
             -e SONAR_HOST_URL \
             -v "$GITHUB_WORKSPACE:/usr/src" \
             sonarsource/sonar-scanner-cli:latest \
-            -X 2>&1 | tee sonar.log
+            | tee sonar.log
           exit ${PIPESTATUS[0]}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
