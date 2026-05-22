@@ -1,4 +1,4 @@
-import urllib.request, json, os, subprocess, tempfile, ssl
+import urllib.request, json, os, re, subprocess, tempfile, ssl
 
 branch = os.environ['BRANCH']
 
@@ -9,6 +9,15 @@ title   = run("git log -1 --pretty=%s")
 commits = run("git log origin/main..HEAD --pretty=format:'%h %s'")
 stat    = run("git diff origin/main..HEAD --stat")
 diff    = run("git diff origin/main..HEAD -- ':(exclude)*.env' ':(exclude)*.env.*' ':(exclude)*secret*' ':(exclude)*credential*' ':(exclude)*password*'")[:10000]
+
+sonar_url = None
+sonar_log_path = os.environ.get('SONAR_LOG_PATH', '')
+if sonar_log_path and os.path.exists(sonar_log_path):
+    with open(sonar_log_path, 'r', errors='replace') as f:
+        sonar_log = f.read()
+    m = re.search(r'ANALYSIS SUCCESSFUL, you can find the results at:\s*(\S+)', sonar_log)
+    if m:
+        sonar_url = m.group(1)
 
 _ssl_ctx = ssl.create_default_context()
 
@@ -32,6 +41,9 @@ models   = api_request("/models")["data"]
 model_id = next((m["id"] for m in models if "sonnet" in m["id"].lower()), models[0]["id"])
 print(f"Using model: {model_id}")
 
+sonar_pipeline_status = "SonarQube ✅" if sonar_url else "SonarQube ✅ (no URL found)"
+sonar_context = f"\nSonarQube results URL: {sonar_url}" if sonar_url else ""
+
 prompt = f"""You are a senior software engineer writing a pull request description for a code reviewer.
 
 Branch: {branch}
@@ -46,9 +58,9 @@ Changed files:
 Diff (truncated to 10 000 chars):
 {diff}
 
-Pipeline: Backend ✅  |  Frontend ✅
+Pipeline: Backend ✅  |  Frontend ✅  |  {sonar_pipeline_status}{sonar_context}
 
-Write a professional PR description with exactly these 6 sections in GitHub Markdown.
+Write a professional PR description with exactly these 7 sections in GitHub Markdown.
 Be concise. Use bullet points where helpful.
 
 ## \U0001f3af General Intention
@@ -65,6 +77,9 @@ Call out any changes that affect system design, introduce new patterns, or add m
 
 ## \U0001f512 Security & Risk Detection
 Flag potential vulnerabilities (SQL injection, XSS, hardcoded secrets, insecure deserialization, etc.) or performance risks (memory leaks, N+1 queries, missing indexes, unbounded loops). Write *None detected* if the code looks clean.
+
+## \U0001f50d SonarQube Analysis
+{"Summarise any notable quality findings. Include this link for reviewers: " + sonar_url if sonar_url else "SonarQube scan passed. No results URL available."}
 
 ## \U0001f4ca Recommendation
 State exactly one of: **✅ APPROVE**, **⚠️ REQUEST CHANGES**, or **\U0001f4ac NEEDS DISCUSSION** — followed by a one-sentence justification."""
