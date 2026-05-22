@@ -66,6 +66,7 @@ jobs:
             frontend-test.log
 
   sonarqube:
+    needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,24 +75,16 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v6
         with:
           args: >
-            -Dsonar.log.level=INFO
-            -Dsonar.log.console=true
+            -Dsonar.verbose=true
+            | tee sonar_logs.txt
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: Persist Sonar log
-        run: |
-          if [ -f .scannerwork/sonar-scanner.log ]; then cp .scannerwork/sonar-scanner.log sonarqube.log; fi
-          if [ -f logs/sonar-scanner.log ]; then cp logs/sonar-scanner.log sonarqube.log; fi
-          if [ -f sonar-scanner.log ]; then cp sonar-scanner.log sonarqube.log; fi
-          if [ ! -f sonarqube.log ]; then echo "No Sonar scanner log found." > sonarqube.log; fi
-
       - name: Upload logs
-        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: sonarqube-logs
-          path: sonarqube.log
+          name: sonar_logs.txt
+          path: sonar_logs.txt
 
 
   post-ci:
@@ -104,20 +97,20 @@ jobs:
           fetch-depth: 0
 
       - name: Download failure logs
-        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure'
+        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure' || needs.sonarqube.result == 'failure'
         uses: actions/download-artifact@v4
         with:
           path: failure-logs
         continue-on-error: true
 
       - name: AI failure analysis
-        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure'
+        if: needs.backend.result == 'failure' || needs.frontend.result == 'failure' || needs.sonarqube.result == 'failure'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python3 .github/scripts/analyze_failures.py
 
       - name: Create pull request
-        if: needs.backend.result == 'success' && needs.frontend.result == 'success' && github.ref != 'refs/heads/main'
+        if: needs.backend.result == 'success' && needs.frontend.result == 'success' && needs.sonarqube.result == 'success' && github.ref != 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
